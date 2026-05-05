@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  USUARIO_LOCAL
+}
+
+model Usuario {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  password  String    // Hasheada con bcrypt
+  nombre    String
+  rol       Role      @default(USUARIO_LOCAL)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  empresas  Empresa[]
+}
+
+enum EstadoConexion {
+  CONECTADO
+  REQUIERE_ACTUALIZACION
+  ERROR_SISTEMA
+}
+
+model Empresa {
+  id             String         @id @default(uuid())
+  ruc            String         @unique
+  razonSocial    String
+  usuarioSol     String
+  claveSol       String         // Encriptada con AES-256
+  estadoConexion EstadoConexion @default(CONECTADO)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  usuarioId      String
+  usuario        Usuario        @relation(fields: [usuarioId], references: [id])
+  
+  notificaciones Notificacion[]
+}
+
+model Notificacion {
+  id              String   @id @default(uuid())
+  empresaId       String
+  fechaMensaje    DateTime
+  asunto          String
+  tipo            String   @default("NOTIFICACION") // NOTIFICACION o MENSAJE
+  rutaArchivoPdf  String?
+  estado          String   @default("NO_LEIDO") // LEIDO o NO_LEIDO
+  createdAt       DateTime @default(now())
+  
+  empresa         Empresa  @relation(fields: [empresaId], references: [id])
+}
