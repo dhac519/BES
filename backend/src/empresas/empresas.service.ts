@@ -30,6 +30,8 @@ export class EmpresasService {
         ruc: true,
         razonSocial: true,
         usuarioSol: true,
+        estadoConexion: true,
+        ultimaSincronizacion: true,
         createdAt: true,
       } // Excluimos claveSol por seguridad
     });

@@ -3,13 +3,17 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Building2, Plus, MoreVertical, Search, Lock, RefreshCw, Trash2, Edit2 } from 'lucide-react';
+import { Building2, Plus, Search, Lock, RefreshCw, Trash2, Edit2, Clock } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
+import ConfirmModal from '@/components/ConfirmModal';
 
 export default function EmpresasPage() {
   const [empresas, setEmpresas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [empresaToDelete, setEmpresaToDelete] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [syncingEmpresas, setSyncingEmpresas] = useState<Record<string, boolean>>({});
   const token = useAuthStore((state) => state.token);
   const user = useAuthStore((state) => state.user);
@@ -37,25 +41,18 @@ export default function EmpresasPage() {
   useEffect(() => {
     if (token) fetchEmpresas();
 
-    // Inicializar WebSockets
     if (user?.id) {
       const socket: Socket = io('http://localhost:3000');
-      
       socket.on(`sync-finished-${user.id}`, (data) => {
         setSyncingEmpresas(prev => ({ ...prev, [data.empresaId]: false }));
-        // Idealmente aquí recargamos empresas o notificaciones
         fetchEmpresas();
       });
-
       socket.on(`sync-error-${user.id}`, (data) => {
         setSyncingEmpresas(prev => ({ ...prev, [data.empresaId]: false }));
-        alert(`Error sincronizando la empresa: ${data.message}`);
+        alert(`Error sincronizando: ${data.message}`);
         fetchEmpresas();
       });
-
-      return () => {
-        socket.disconnect();
-      };
+      return () => { socket.disconnect(); };
     }
   }, [token, user?.id]);
 
@@ -88,8 +85,7 @@ export default function EmpresasPage() {
       setRuc(''); setRazonSocial(''); setUsuarioSol(''); setClaveSol('');
       fetchEmpresas();
     } catch (error) {
-      console.error("Error al guardar empresa", error);
-      alert("Hubo un error al guardar la empresa");
+      alert("Error al guardar la empresa");
     }
   };
 
@@ -98,20 +94,24 @@ export default function EmpresasPage() {
     setRuc(empresa.ruc);
     setRazonSocial(empresa.razonSocial);
     setUsuarioSol(empresa.usuarioSol);
-    setClaveSol(''); // Dejar en blanco a menos que quiera cambiarla
+    setClaveSol('');
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("¿Estás seguro de eliminar esta empresa? Esto detendrá la sincronización de su buzón.")) {
-      try {
-        await axios.delete(`http://localhost:3000/empresas/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchEmpresas();
-      } catch (error) {
-        alert("Error al eliminar la empresa");
-      }
+  const confirmDelete = (id: string) => {
+    setEmpresaToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!empresaToDelete) return;
+    try {
+      await axios.delete(`http://localhost:3000/empresas/${empresaToDelete}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchEmpresas();
+    } catch (error) {
+      alert("Error al eliminar");
     }
   };
 
@@ -121,10 +121,18 @@ export default function EmpresasPage() {
     setIsModalOpen(true);
   };
 
+  const filteredEmpresas = empresas.filter(emp => 
+    emp.razonSocial.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    emp.ruc.includes(searchTerm)
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-white">Mis Empresas</h2>
+        <div>
+          <h2 className="text-2xl font-bold text-white">Gestión de Empresas</h2>
+          <p className="text-gray-400 text-sm">Administra las credenciales y sincronización de tus {empresas.length} empresas.</p>
+        </div>
         <button 
           onClick={openNewModal}
           className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20 hover:-translate-y-0.5"
@@ -134,158 +142,167 @@ export default function EmpresasPage() {
         </button>
       </div>
 
-      {/* Grid de Empresas */}
+      {/* Buscador Rápido */}
+      <div className="relative group max-w-md">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 group-focus-within:text-blue-400 transition-colors" />
+        <input 
+          type="text" 
+          placeholder="Buscar por RUC o Razón Social..." 
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full bg-[#111827] border border-white/5 rounded-2xl py-3 pl-12 pr-4 text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+        />
+      </div>
+
       {loading ? (
-        <div className="text-gray-400 text-center py-10">Cargando empresas...</div>
-      ) : empresas.length === 0 ? (
-        <div className="bg-[#111827] border border-white/5 rounded-3xl p-16 text-center">
-          <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Building2 className="w-10 h-10 text-blue-400" />
-          </div>
-          <h3 className="text-xl font-bold text-white mb-2">No tienes empresas registradas</h3>
-          <p className="text-gray-400 mb-8 max-w-md mx-auto">
-            Agrega tu primera empresa con sus credenciales SOL para que nuestro robot empiece a descargar sus notificaciones automáticamente.
-          </p>
-          <button 
-            onClick={openNewModal}
-            className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white px-6 py-3 rounded-xl font-bold transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Vincular Primera Empresa
-          </button>
+        <div className="text-gray-400 text-center py-20 bg-[#111827] rounded-3xl border border-white/5">
+          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-500" />
+          Cargando base de datos de empresas...
+        </div>
+      ) : filteredEmpresas.length === 0 ? (
+        <div className="bg-[#111827] border border-white/5 rounded-3xl p-20 text-center">
+          <Building2 className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+          <p className="text-gray-400">No se encontraron empresas con esos criterios.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {empresas.map((emp) => (
-            <div key={emp.id} className="bg-[#111827] border border-white/5 hover:border-blue-500/30 rounded-2xl p-6 transition-colors group relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 flex gap-2">
-                <button 
-                  onClick={() => handleSync(emp.id)}
-                  disabled={syncingEmpresas[emp.id]}
-                  className="text-gray-500 hover:text-blue-400 transition-colors disabled:opacity-50"
-                  title="Sincronizar Buzón"
-                >
-                  <RefreshCw className={`w-5 h-5 ${syncingEmpresas[emp.id] ? 'animate-spin text-blue-400' : ''}`} />
-                </button>
-                <button 
-                  onClick={() => handleEdit(emp)}
-                  className="text-gray-500 hover:text-white transition-colors"
-                  title="Editar Empresa"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={() => handleDelete(emp.id)}
-                  className="text-gray-500 hover:text-red-400 transition-colors"
-                  title="Eliminar Empresa"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="w-12 h-12 bg-gradient-to-br from-gray-800 to-gray-700 border border-white/10 rounded-xl flex items-center justify-center mb-4 group-hover:from-blue-600 group-hover:to-indigo-600 transition-colors">
-                <Building2 className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-lg font-bold text-white truncate mb-1" title={emp.razonSocial}>{emp.razonSocial}</h3>
-              <div className="flex items-center gap-2 text-sm text-gray-400 mb-4">
-                <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">RUC: {emp.ruc}</span>
-              </div>
-              
-              {emp.estadoConexion === 'CONECTADO' && (
-                <div className="flex items-center gap-2 text-xs font-medium text-emerald-400 bg-emerald-400/10 w-fit px-3 py-1.5 rounded-full border border-emerald-400/20 mt-4">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Sincronización Activa
-                </div>
-              )}
-              {emp.estadoConexion === 'REQUIERE_ACTUALIZACION' && (
-                <div className="flex items-center gap-2 text-xs font-medium text-red-400 bg-red-400/10 w-fit px-3 py-1.5 rounded-full border border-red-400/20 mt-4">
-                  <span className="w-2 h-2 rounded-full bg-red-400"></span>
-                  Credenciales Inválidas
-                </div>
-              )}
-              {emp.estadoConexion === 'ERROR_SISTEMA' && (
-                <div className="flex items-center gap-2 text-xs font-medium text-amber-400 bg-amber-400/10 w-fit px-3 py-1.5 rounded-full border border-amber-400/20 mt-4">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                  Fallo en SUNAT
-                </div>
-              )}
-            </div>
-          ))}
+        <div className="bg-[#111827] border border-white/5 rounded-3xl overflow-hidden shadow-xl">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-white/[0.02] text-gray-400 text-xs font-bold uppercase tracking-wider">
+                <th className="px-6 py-4 border-b border-white/5">Empresa / RUC</th>
+                <th className="px-6 py-4 border-b border-white/5">Usuario SOL</th>
+                <th className="px-6 py-4 border-b border-white/5">Última Sincro</th>
+                <th className="px-6 py-4 border-b border-white/5">Estado Conexión</th>
+                <th className="px-6 py-4 border-b border-white/5 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filteredEmpresas.map((emp) => (
+                <tr key={emp.id} className="hover:bg-white/[0.02] transition-colors group">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gray-800 to-gray-700 flex items-center justify-center border border-white/10 group-hover:from-blue-600 group-hover:to-indigo-600 transition-all">
+                        <Building2 className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-white mb-0.5">{emp.razonSocial}</div>
+                        <div className="text-xs font-mono text-gray-500">RUC: {emp.ruc}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-sm font-medium text-gray-300 bg-white/5 px-2 py-1 rounded-lg border border-white/5">
+                      {emp.usuarioSol}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-semibold text-gray-300 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-blue-400" />
+                        {emp.ultimaSincronizacion 
+                          ? new Date(emp.ultimaSincronizacion).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+                          : 'Nunca'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-full border border-emerald-400/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      ACTIVA
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <div className="flex items-center justify-end gap-2 transition-opacity">
+                      <button 
+                        onClick={() => handleSync(emp.id)}
+                        disabled={syncingEmpresas[emp.id]}
+                        className={`p-2 rounded-lg border transition-all ${syncingEmpresas[emp.id] ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' : 'bg-white/5 border-white/10 text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/20'}`}
+                        title="Sincronizar"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${syncingEmpresas[emp.id] ? 'animate-spin' : ''}`} />
+                      </button>
+                      <button 
+                        onClick={() => handleEdit(emp)}
+                        className="p-2 bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                        title="Editar"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => confirmDelete(emp.id)}
+                        className="p-2 bg-white/5 border border-white/10 text-gray-400 hover:text-red-400 hover:bg-red-400/10 hover:border-red-400/20 rounded-lg transition-all"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {/* Modal Agregar Empresa */}
+      {/* Modal Agregar/Editar */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#111827] border border-white/10 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-white/5">
-              <h3 className="text-xl font-bold text-white">{editingId ? 'Editar Empresa' : 'Agregar Empresa a BES'}</h3>
-              <p className="text-sm text-gray-400 mt-1">Ingresa las credenciales SOL para la sincronización.</p>
+          <div className="bg-[#111827] border border-white/10 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 border-b border-white/5 bg-white/[0.02]">
+              <h3 className="text-xl font-bold text-white">{editingId ? 'Editar Empresa' : 'Vincular Nueva Empresa'}</h3>
             </div>
-            
             <form onSubmit={handleAddEmpresa} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-1.5">RUC</label>
+                <label className="block text-sm font-semibold text-gray-400 mb-1.5">RUC</label>
                 <input 
-                  type="text" required maxLength={11}
-                  value={ruc} onChange={(e) => setRuc(e.target.value)}
-                  className="w-full bg-[#1f2937]/50 border border-white/5 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500/50 outline-none"
-                  placeholder="20123456789"
+                  type="text" required maxLength={11} value={ruc} onChange={(e) => setRuc(e.target.value)}
+                  className="w-full bg-[#1f2937]/50 border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  placeholder="206..."
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-300 mb-1.5">Razón Social</label>
+                <label className="block text-sm font-semibold text-gray-400 mb-1.5">Razón Social</label>
                 <input 
-                  type="text" required
-                  value={razonSocial} onChange={(e) => setRazonSocial(e.target.value)}
-                  className="w-full bg-[#1f2937]/50 border border-white/5 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500/50 outline-none"
-                  placeholder="Mi Empresa SAC"
+                  type="text" required value={razonSocial} onChange={(e) => setRazonSocial(e.target.value)}
+                  className="w-full bg-[#1f2937]/50 border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold text-gray-300 mb-1.5">Usuario SOL</label>
+                  <label className="block text-sm font-semibold text-gray-400 mb-1.5">Usuario SOL</label>
                   <input 
-                    type="text" required
-                    value={usuarioSol} onChange={(e) => setUsuarioSol(e.target.value)}
-                    className="w-full bg-[#1f2937]/50 border border-white/5 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500/50 outline-none"
-                    placeholder="ADMIN123"
+                    type="text" required value={usuarioSol} onChange={(e) => setUsuarioSol(e.target.value)}
+                    className="w-full bg-[#1f2937]/50 border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-gray-300 mb-1.5 flex items-center gap-1">
-                    Clave SOL <Lock className="w-3.5 h-3.5 text-blue-400" />
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-400 mb-1.5">Clave SOL</label>
                   <input 
-                    type="password" required={!editingId}
-                    value={claveSol} onChange={(e) => setClaveSol(e.target.value)}
-                    className="w-full bg-[#1f2937]/50 border border-white/5 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500/50 outline-none"
-                    placeholder={editingId ? "Dejar en blanco para no cambiar" : "••••••••"}
+                    type="password" required={!editingId} value={claveSol} onChange={(e) => setClaveSol(e.target.value)}
+                    className="w-full bg-[#1f2937]/50 border border-white/5 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    placeholder={editingId ? "••••••••" : ""}
                   />
                 </div>
               </div>
-              <div className="text-xs text-blue-400 bg-blue-500/10 p-3 rounded-lg border border-blue-500/20 flex items-start gap-2 mt-4">
-                <Lock className="w-4 h-4 shrink-0 mt-0.5" />
-                <p>La Clave SOL será encriptada con grado militar (AES-256) antes de guardarse en la base de datos.</p>
-              </div>
-
               <div className="flex items-center gap-3 mt-8 pt-4">
-                <button 
-                  type="button" onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-3 text-gray-300 hover:text-white hover:bg-white/5 rounded-xl font-semibold transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit"
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/25 transition-colors"
-                >
-                  {editingId ? 'Guardar Cambios' : 'Guardar Empresa'}
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 text-gray-400 hover:text-white transition-colors">Cancelar</button>
+                <button type="submit" className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all">
+                  {editingId ? 'Actualizar' : 'Vincular'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Modal de Confirmación de Eliminación */}
+      <ConfirmModal 
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDelete}
+        title="¿Eliminar Empresa?"
+        message="Esta acción es irreversible y detendrá todas las sincronizaciones automáticas del buzón de esta empresa."
+      />
     </div>
   );
 }

@@ -37,9 +37,10 @@ model Empresa {
   razonSocial    String
   usuarioSol     String
   claveSol       String         // Encriptada con AES-256
-  estadoConexion EstadoConexion @default(CONECTADO)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+   estadoConexion       EstadoConexion @default(CONECTADO)
+   ultimaSincronizacion DateTime?
+   createdAt            DateTime       @default(now())
+   updatedAt            DateTime       @updatedAt
   
   usuarioId      String
   usuario        Usuario        @relation(fields: [usuarioId], references: [id])

@@ -277,6 +277,13 @@ export class ScraperService {
       }
 
       this.logger.log(`Revisión completada para RUC ${empresa.ruc}`);
+
+      // Actualizar fecha de última sincronización exitosa
+      const updated = await this.prisma.empresa.update({
+        where: { id: empresaId },
+        data: { ultimaSincronizacion: new Date() } as any
+      });
+      this.logger.log(`Fecha de sincronización actualizada para ${empresa.ruc}: ${updated.ultimaSincronizacion}`);
     } catch (error) {
       this.logger.error(`Error durante el scraping:`, error);
       throw error;

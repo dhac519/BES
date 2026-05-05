@@ -4,40 +4,40 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuthStore } from '@/store/useAuthStore';
 import { FileText, Search, Mail, MailOpen, Clock, X, ExternalLink, Trash2 } from 'lucide-react';
+import ConfirmModal from '@/components/ConfirmModal';
 
 export default function DashboardInbox() {
   const [notificaciones, setNotificaciones] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPdf, setSelectedPdf] = useState<string | null>(null);
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const token = useAuthStore((state) => state.token);
 
-  useEffect(() => {
-    const fetchNotificaciones = async () => {
-      try {
-        const res = await axios.get('http://localhost:3000/notificaciones', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setNotificaciones(res.data);
-      } catch (error) {
-        console.error("Error cargando notificaciones", error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchNotificaciones = async () => {
+    try {
+      const res = await axios.get('http://localhost:3000/notificaciones', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setNotificaciones(res.data);
+    } catch (error) {
+      console.error("Error cargando notificaciones", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     if (token) fetchNotificaciones();
   }, [token]);
 
   const handleClearInbox = async () => {
-    if (confirm("¿Estás seguro de eliminar todas las notificaciones? Esta acción es irreversible.")) {
-      try {
-        await axios.delete('http://localhost:3000/notificaciones', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchNotificaciones();
-      } catch (error) {
-        alert("Error al limpiar la bandeja");
-      }
+    try {
+      await axios.delete('http://localhost:3000/notificaciones', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchNotificaciones();
+    } catch (error) {
+      alert("Error al limpiar la bandeja");
     }
   };
 
@@ -72,7 +72,7 @@ export default function DashboardInbox() {
           <div className="flex items-center gap-3">
             {notificaciones.length > 0 && (
               <button 
-                onClick={handleClearInbox}
+                onClick={() => setIsClearModalOpen(true)}
                 className="flex items-center gap-2 text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors border border-red-400/20"
               >
                 <Trash2 className="w-4 h-4" />
@@ -180,6 +180,14 @@ export default function DashboardInbox() {
           </div>
         </div>
       )}
+      {/* Modal de Confirmación Premium */}
+      <ConfirmModal 
+        isOpen={isClearModalOpen}
+        onClose={() => setIsClearModalOpen(false)}
+        onConfirm={handleClearInbox}
+        title="¿Limpiar Bandeja?"
+        message="¿Estás seguro de eliminar todas las notificaciones? Esta acción borrará los registros de forma irreversible."
+      />
     </div>
   );
 }
