@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Building2, Plus, Search, Lock, RefreshCw, Trash2, Edit2, Clock } from 'lucide-react';
+import { Building2, Plus, Search, Lock, RefreshCw, Trash2, Edit2, Clock, Bell } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import ConfirmModal from '@/components/ConfirmModal';
 
@@ -173,6 +173,7 @@ export default function EmpresasPage() {
                 <th className="px-6 py-4 border-b border-white/5">Usuario SOL</th>
                 <th className="px-6 py-4 border-b border-white/5">Última Sincro</th>
                 <th className="px-6 py-4 border-b border-white/5">Estado Sincro</th>
+                <th className="px-6 py-4 border-b border-white/5">Notif. {new Date().getFullYear()}</th>
                 <th className="px-6 py-4 border-b border-white/5 text-right">Acciones</th>
               </tr>
             </thead>
@@ -227,6 +228,27 @@ export default function EmpresasPage() {
                         ESPERA
                       </span>
                     )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const count = emp._count?.notificaciones ?? null;
+                      const synced = emp.estadoSincro === 'SUCCESS' || emp.estadoSincro === 'ERROR';
+                      if (!synced) return (
+                        <span className="text-xs text-gray-600">—</span>
+                      );
+                      if (count === 0) return (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-400 bg-amber-400/10 px-2.5 py-1 rounded-full border border-amber-400/20">
+                          <Bell className="w-3 h-3" />
+                          Sin notif. {new Date().getFullYear()}
+                        </span>
+                      );
+                      return (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-400 bg-emerald-400/10 px-2.5 py-1 rounded-full border border-emerald-400/20">
+                          <Bell className="w-3 h-3" />
+                          {count} notif.
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2 transition-opacity">

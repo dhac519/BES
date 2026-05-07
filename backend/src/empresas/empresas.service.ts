@@ -23,6 +23,10 @@ export class EmpresasService {
   }
 
   findAllByUser(usuarioId: string) {
+    const anoActual = new Date().getFullYear();
+    const inicioAnio = new Date(`${anoActual}-01-01T00:00:00.000Z`);
+    const finAnio    = new Date(`${anoActual}-12-31T23:59:59.999Z`);
+
     return this.prisma.empresa.findMany({
       where: { usuarioId },
       select: {
@@ -34,9 +38,20 @@ export class EmpresasService {
         estadoSincro: true,
         ultimaSincronizacion: true,
         createdAt: true,
-      } // Excluimos claveSol por seguridad
+        // Contar notificaciones del año actual
+        _count: {
+          select: {
+            notificaciones: {
+              where: {
+                fechaMensaje: { gte: inicioAnio, lte: finAnio }
+              }
+            }
+          }
+        }
+      }
     });
   }
+
 
   findOne(id: string, usuarioId: string) {
     return this.prisma.empresa.findFirst({

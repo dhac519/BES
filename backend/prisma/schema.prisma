@@ -52,11 +52,12 @@ model Empresa {
 model Notificacion {
   id              String   @id @default(uuid())
   empresaId       String
+  fileId          String?  @unique  // ID interno de SUNAT — garantiza unicidad y evita duplicados
   fechaMensaje    DateTime
   asunto          String
   tipo            String   @default("NOTIFICACION") // NOTIFICACION o MENSAJE
   rutaArchivoPdf  String?
-  estado          String   @default("NO_LEIDO") // LEIDO o NO_LEIDO
+  estado          String   @default("NO_LEIDO") // NO_LEIDO, LEIDO, SIN_PDF
   createdAt       DateTime @default(now())
   
   empresa         Empresa  @relation(fields: [empresaId], references: [id])

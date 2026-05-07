@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuthStore } from '@/store/useAuthStore';
-import { FileText, Search, Mail, MailOpen, Clock, X, ExternalLink, Trash2 } from 'lucide-react';
+import { FileText, Search, Mail, MailOpen, Clock, X, ExternalLink, Trash2, AlertTriangle } from 'lucide-react';
 import ConfirmModal from '@/components/ConfirmModal';
 
 export default function DashboardInbox() {
@@ -89,7 +89,8 @@ export default function DashboardInbox() {
           {displayData.length === 0 ? (
             <div className="p-10 text-center text-gray-400">
               <MailOpen className="w-10 h-10 mx-auto mb-3 opacity-20" />
-              <p>No tienes notificaciones en esta bandeja.</p>
+              <p className="font-medium">No hay notificaciones del {new Date().getFullYear()} en esta bandeja.</p>
+              <p className="text-xs mt-1 text-gray-600">Los documentos de años anteriores no se importan automáticamente.</p>
             </div>
           ) : displayData.map((notif: any) => (
             <div 
@@ -129,7 +130,12 @@ export default function DashboardInbox() {
                 </h4>
                 
                 <div className="flex flex-col gap-2 mt-2">
-                  {notif.rutaArchivoPdf && (
+                  {notif.estado === 'SIN_PDF' ? (
+                    <div className="flex items-center gap-2 text-amber-400/80 text-sm bg-amber-400/5 border border-amber-400/20 rounded-lg px-3 py-2">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span>PDF no disponible en servidores de SUNAT. El título fue registrado para tu referencia.</span>
+                    </div>
+                  ) : notif.rutaArchivoPdf ? (
                     <div className="flex flex-col gap-1">
                       <button 
                         onClick={() => setSelectedPdf(notif.rutaArchivoPdf)}
@@ -142,7 +148,7 @@ export default function DashboardInbox() {
                         {notif.rutaArchivoPdf}
                       </a>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>

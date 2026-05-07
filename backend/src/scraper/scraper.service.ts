@@ -138,9 +138,16 @@ export class ScraperService {
       if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
       let notificacionesExtraidas: any[] = [];
-      const notificacionesMap = new Map<string, any>();
+      const notificacionesNuevas: any[] = []; // Solo las que NO existen en BD
       const pdfsFallidos: { asunto: string; fecha: string }[] = [];
       const anoActual = new Date().getFullYear();
+
+      // IDEMPOTENCIA: Cargar fileIds ya existentes en BD para esta empresa (1 sola query)
+      const registrosExistentes = await this.prisma.notificacion.findMany({
+        where: { empresaId: empresa.id },
+        select: { fileId: true }
+      });
+      const fileIdsExistentes = new Set(registrosExistentes.map(r => r.fileId).filter(Boolean));
 
       try {
         const framesList = page.frames();
@@ -184,6 +191,8 @@ export class ScraperService {
           this.logger.log(`Detectadas ${containersArray.length} filas reales procesadas en milisegundos.`);
 
           let lastFileId = "";
+          let consecutivasAnioAnterior = 0; // Counter para break temprano
+
           for (const container of containersArray) {
              try {
                 const rowData = await (container as any).evaluate((node: HTMLElement) => {
@@ -192,6 +201,34 @@ export class ScraperService {
                       asunto: node.querySelector('.asunto, [class*="asunto"], b, strong')?.textContent || node.innerText.split('\n')[0]
                    };
                 });
+
+                // FIX DE FECHA: Leer desde el texto de la FILA, no del body completo
+                const rowDateMatch = rowData.fullText.match(/(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})/)
+                                  || rowData.fullText.match(/(\d{2}\/\d{2}\/\d{4})/);
+
+                if (!rowDateMatch) {
+                   this.logger.warn(`⚠️ No se pudo extraer fecha de la fila. Saltando.`);
+                   continue;
+                }
+
+                // Parsear fecha para el filtro de año
+                const parts = rowDateMatch[1].includes(':') 
+                   ? rowDateMatch[1].split(/[\s\/:]/)
+                   : [...rowDateMatch[1].split('/'), '0', '0', '0'];
+                const rowFecha = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+
+                // BREAK TEMPRANO: Si esta fila es del año anterior, aumentar contador
+                if (rowFecha.getFullYear() < anoActual) {
+                   consecutivasAnioAnterior++;
+                   this.logger.log(`⏭️ Fila del ${rowFecha.getFullYear()} (${consecutivasAnioAnterior}/2 consecutivas): ${rowData.asunto.substring(0, 50)}`);
+                   if (consecutivasAnioAnterior >= 2) {
+                      this.logger.log(`⏹️ 2 filas consecutivas del año anterior. Deteniendo escaneo.`);
+                      break;
+                   }
+                   continue;
+                }
+                consecutivasAnioAnterior = 0; // Reset si encontramos una del año actual
+
 
                 await (container as any).evaluate((node: HTMLElement) => {
                    node.scrollIntoView();
@@ -211,6 +248,12 @@ export class ScraperService {
                 }
                 lastFileId = currentId;
 
+                // IDEMPOTENCIA: Si este fileId ya existe en BD, saltar (no descargar ni insertar)
+                if (currentId && fileIdsExistentes.has(currentId)) {
+                   this.logger.log(`⏭️ Ya existe en BD: ${currentId}. Saltando descarga.`);
+                   continue;
+                }
+
                 const data = await mainFrame.evaluate(() => {
                    const visor = document.querySelector('iframe[src*="visor"], #divDetalleMensaje, [id*="visor"], .constancia-container');
                    return {
@@ -221,27 +264,18 @@ export class ScraperService {
 
                 const textBlock = data.text;
                 const htmlBlock = data.html;
-                const dateMatch = textBlock.match(/(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})/) || rowData.fullText.match(/(\d{2}\/\d{2}\/\d{4})/);
+                // Usar la fecha ya extraída de la fila (rowDateMatch / rowFecha)
+                const dateMatch = rowDateMatch;
                 
                 if (dateMatch) {
                     let asunto = rowData.asunto.trim();
                     if (!asunto.toUpperCase().includes('ASUNTO:')) asunto = `ASUNTO: ${asunto}`;
                     let tipoMensaje = asunto.toUpperCase().includes('NOTIFICACI') ? "NOTIFICACION" : "MENSAJE";
                     
-                    let fechaMensaje = new Date();
-                    if (dateMatch[1].includes(':')) {
-                       const parts = dateMatch[1].split(/[\s\/:]/); 
-                       fechaMensaje = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]), parseInt(parts[3]), parseInt(parts[4]), parseInt(parts[5]));
-                    } else {
-                       const parts = dateMatch[1].split('/');
-                       fechaMensaje = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
-                    }
+                    // Usar la fecha ya parseada desde la fila
+                    const fechaMensaje = rowFecha;
 
-                    // A1: FILTRO DE AÑO — Solo procesamos notificaciones del año actual
-                    if (fechaMensaje.getFullYear() !== anoActual) {
-                       this.logger.log(`⏭️ Saltando notificación de ${fechaMensaje.getFullYear()}: ${asunto.substring(0, 60)}`);
-                       continue;
-                    }
+                    // A1: El filtro de año ya fue aplicado arriba con rowFecha, no hace falta repetir
 
                     // --- ESTRATEGIA SUPREMA: EXTRACCIÓN PROFUNDA (ANTICOLISIONES) ---
                     // 1. Iniciamos en null. Nunca guardes rutas dummy en BD para evitar errores 404 en el frontend.
@@ -335,18 +369,16 @@ export class ScraperService {
                      }
 
                     if (tipoMensaje === "NOTIFICACION") {
-                       const uniqueKey = fileId || `${asunto}-${dateMatch[1]}`;
-                       if (!notificacionesMap.has(uniqueKey)) {
-                          notificacionesMap.set(uniqueKey, {
-                             empresaId: empresa.id,
-                             asunto: asunto.length > 200 ? asunto.substring(0, 197) + '...' : asunto,
-                             fechaMensaje,
-                             tipo: tipoMensaje,
-                             // B3: Estado diferenciado — SIN_PDF si no se pudo descargar
-                             estado: finalHref ? 'NO_LEIDO' : 'SIN_PDF',
-                             rutaArchivoPdf: finalHref
-                          });
-                       }
+                       // Agregar a la lista de NUEVAS (no duplicadas) para insertar
+                       notificacionesNuevas.push({
+                          empresaId: empresa.id,
+                          fileId: fileId || null,        // ID único de SUNAT
+                          asunto: asunto.length > 200 ? asunto.substring(0, 197) + '...' : asunto,
+                          fechaMensaje,
+                          tipo: tipoMensaje,
+                          estado: finalHref ? 'NO_LEIDO' : 'SIN_PDF',
+                          rutaArchivoPdf: finalHref
+                       });
                     }
                 }
                 // MEJORA ANTI-BAN: Pausa entre notificaciones para no saturar SUNAT
@@ -356,16 +388,23 @@ export class ScraperService {
              }
           }
         }
-        notificacionesExtraidas = Array.from(notificacionesMap.values());
+        notificacionesExtraidas = notificacionesNuevas;
       } catch (domError) {
         this.logger.error('Fallo crítico:', domError);
       }
 
-      if (notificacionesExtraidas.length > 0) {
-          await this.prisma.notificacion.deleteMany({ where: { empresaId: empresa.id } });
-          await this.prisma.notificacion.createMany({ data: notificacionesExtraidas });
-          this.logger.log(`📦 Sincronizados ${notificacionesExtraidas.length} elementos.`);
+      // IDEMPOTENCIA: Solo insertar las nuevas (no existentes en BD)
+      // skipDuplicates: true maneja silenciosamente duplicados del mismo ciclo (mismo fileId procesado dos veces)
+      if (notificacionesNuevas.length > 0) {
+          const result = await this.prisma.notificacion.createMany({
+              data: notificacionesNuevas,
+              skipDuplicates: true
+          });
+          this.logger.log(`📦 ${result.count} nueva(s) notificacion(es) insertada(s) en BD. (${notificacionesNuevas.length - result.count} duplicado(s) omitido(s))`);
+      } else {
+          this.logger.log(`✅ Sin nuevas notificaciones. La BD ya estaba al día.`);
       }
+
 
       for (const notif of notificacionesExtraidas) {
         if (notif.asunto.toLowerCase().includes("orden de pago") || notif.asunto.toLowerCase().includes("esquela")) {
