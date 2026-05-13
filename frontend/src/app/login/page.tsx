@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import axios from 'axios';
+import api from '@/lib/api';
 import { Mail, Lock, LogIn, Activity } from 'lucide-react';
 
 export default function LoginPage() {
@@ -20,7 +20,7 @@ export default function LoginPage() {
     setError('');
     
     try {
-      const response = await axios.post('http://localhost:3000/auth/login', {
+      const response = await api.post('/auth/login', {
         email,
         password,
       });

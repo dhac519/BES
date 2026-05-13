@@ -352,7 +352,8 @@ export class ScraperService {
                                     const fileName = `${docInfo.internalId}.pdf`; // <-- Nombre de archivo 100% único
                                     const filePath = path.join(uploadDir, fileName);
                                     fs.writeFileSync(filePath, buffer);
-                                    finalHref = `http://localhost:3000/uploads/${fileName}`;
+                                    const backendUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+                                    finalHref = `${backendUrl}/uploads/${fileName}`;
                                     this.logger.log(`🚀 ¡Jaque Mate! Documento físico guardado: ${fileName}`);
                                 } else {
                                     this.logger.warn(`⚠️ PDF vacío/corrupto para: ${asunto.substring(0, 60)}`);
