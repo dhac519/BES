@@ -115,4 +115,20 @@ export class EmpresasService {
     await this.prisma.empresaAsignacion.deleteMany({ where: { empresaId: id } });
     return this.prisma.empresa.deleteMany({ where: { id, usuarioId } });
   }
+
+  /**
+   * Resetea empresas atascadas en SYNCING por más de 10 minutos.
+   * Necesario cuando Render se duerme y los jobs de BullMQ quedan huérfanos.
+   */
+  async resetStuckSync() {
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const result = await this.prisma.empresa.updateMany({
+      where: {
+        estadoSincro: 'SYNCING',
+        updatedAt: { lt: tenMinutesAgo }
+      },
+      data: { estadoSincro: 'IDLE' }
+    });
+    return { reset: result.count };
+  }
 }

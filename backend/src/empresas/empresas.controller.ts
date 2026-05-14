@@ -46,5 +46,11 @@ export class EmpresasController {
     const ownerId = await this.getSuperAdminId(req.user.rol, req.user.id);
     return this.empresasService.remove(id, ownerId);
   }
+
+  /** Resetea empresas atascadas en SYNCING (útil cuando Render/backend se reinicia) */
+  @Post('reset-stuck')
+  resetStuck() {
+    return this.empresasService.resetStuckSync();
+  }
 }
 

@@ -22,7 +22,12 @@ export function useEmpresas() {
   }, []);
 
   useEffect(() => {
-    if (token) fetchEmpresas();
+    if (!token) return;
+
+    // 1. Al cargar, resetear empresas atascadas en SYNCING (por Render durmiendo)
+    api.post('/empresas/reset-stuck', {}).catch(() => {});
+
+    fetchEmpresas();
 
     if (user?.id) {
       const socket: Socket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000');
@@ -38,6 +43,14 @@ export function useEmpresas() {
       return () => { socket.disconnect(); };
     }
   }, [token, user?.id, fetchEmpresas]);
+
+  // 2. Polling cada 15s cuando hay empresas sincronizando (para capturar completions)
+  useEffect(() => {
+    const hasSyncing = empresas.some(e => e.estadoSincro === 'SYNCING');
+    if (!hasSyncing) return;
+    const interval = setInterval(() => fetchEmpresas(), 15000);
+    return () => clearInterval(interval);
+  }, [empresas, fetchEmpresas]);
 
   const handleSync = async (empresaId: string) => {
     try {
